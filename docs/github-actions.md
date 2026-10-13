@@ -18,11 +18,14 @@ El bootstrap debe ejecutarse antes de configurar las variables:
 export AWS_REGION=eu-west-1
 export GITHUB_OWNER=tu-organizacion
 export GITHUB_REPOSITORY=tu-organizacion/lamda-cicd
+export GITHUB_ORGANIZATION_ID=203402347
+export GITHUB_REPOSITORY_ID=1417192239
 ./scripts/bootstrap.sh
 ```
 
 El bootstrap crea un proveedor OIDC, un bucket, un secreto y el role
 `lambda-cicd-github-actions`. Si se modifica el trust policy, vuelve a ejecutar el bootstrap.
+Los IDs numéricos son necesarios porque GitHub los incluye en el claim `sub` del token OIDC.
 
 ## 2. Obtener outputs de AWS
 

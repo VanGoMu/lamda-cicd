@@ -6,6 +6,12 @@ Parameters:
     Type: String
   GitHubRepository:
     Type: String
+  GitHubOrganizationId:
+    Type: String
+    Description: ID numerico de la organizacion GitHub.
+  GitHubRepositoryId:
+    Type: String
+    Description: ID numerico del repositorio GitHub.
   GitHubRoleName:
     Type: String
     Default: lambda-cicd-github-actions
@@ -98,21 +104,29 @@ Resources:
               StringLike:
                 token.actions.githubusercontent.com:sub:
                   - !Sub
-                    - repo:${Organization}/${Repository}:ref:refs/tags/direct-v*
+                    - repo:${Organization}@${OrganizationId}/${Repository}@${RepositoryId}:ref:refs/tags/direct-v*
                     - Organization: !Ref GitHubOrganization
                       Repository: !Ref GitHubRepository
+                      OrganizationId: !Ref GitHubOrganizationId
+                      RepositoryId: !Ref GitHubRepositoryId
                   - !Sub
-                    - repo:${Organization}/${Repository}:ref:refs/tags/api-v*
+                    - repo:${Organization}@${OrganizationId}/${Repository}@${RepositoryId}:ref:refs/tags/api-v*
                     - Organization: !Ref GitHubOrganization
                       Repository: !Ref GitHubRepository
+                      OrganizationId: !Ref GitHubOrganizationId
+                      RepositoryId: !Ref GitHubRepositoryId
                   - !Sub
-                    - repo:${Organization}/${Repository}:ref:refs/tags/alb-v*
+                    - repo:${Organization}@${OrganizationId}/${Repository}@${RepositoryId}:ref:refs/tags/alb-v*
                     - Organization: !Ref GitHubOrganization
                       Repository: !Ref GitHubRepository
+                      OrganizationId: !Ref GitHubOrganizationId
+                      RepositoryId: !Ref GitHubRepositoryId
                   - !Sub
-                    - repo:${Organization}/${Repository}:ref:refs/tags/url-v*
+                    - repo:${Organization}@${OrganizationId}/${Repository}@${RepositoryId}:ref:refs/tags/url-v*
                     - Organization: !Ref GitHubOrganization
                       Repository: !Ref GitHubRepository
+                      OrganizationId: !Ref GitHubOrganizationId
+                      RepositoryId: !Ref GitHubRepositoryId
       Policies:
         - PolicyName: github-deploy
           PolicyDocument:

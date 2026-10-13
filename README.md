@@ -107,6 +107,8 @@ Ejecuta una vez el bootstrap después de revisar sus parámetros:
 export AWS_REGION=eu-west-1
 export GITHUB_OWNER=tu-organizacion
 export GITHUB_REPOSITORY=tu-organizacion/lamda-cicd
+export GITHUB_ORGANIZATION_ID=203402347
+export GITHUB_REPOSITORY_ID=1417192239
 ./scripts/bootstrap.sh
 ```
 
