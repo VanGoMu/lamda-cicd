@@ -69,3 +69,24 @@ def test_handler_accepts_api_gateway_event(monkeypatch):
 
     assert response["statusCode"] == 200
     assert json.loads(response["body"])["request_id"] == "api-request"
+
+
+def test_handler_uses_s3_eventbridge_object(monkeypatch):
+    monkeypatch.setenv("CONFIG_BUCKET", "fallback-bucket")
+    monkeypatch.setenv("CONFIG_KEY", "config/fallback.json")
+    monkeypatch.setenv("SECRET_ARN", "arn:test")
+
+    response = lambda_handler(
+        {
+            "source": "aws.s3",
+            "detail": {
+                "bucket": {"name": "artifact-bucket"},
+                "object": {"key": "config/1.2.3.json"},
+            },
+        },
+        None,
+        s3_client=S3Client(),
+        secrets_client=SecretsClient(),
+    )
+
+    assert response["statusCode"] == 200

@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda invocada por objetos de configuracion creados en S3 mediante EventBridge.
+
+Parameters:
+  CodeS3Bucket:
+    Type: String
+  CodeS3Key:
+    Type: String
+  ConfigS3Bucket:
+    Type: String
+  ConfigS3Key:
+    Type: String
+  SecretArn:
+    Type: String
+  FunctionName:
+    Type: String
+    Default: lambda-cicd-eventbridge
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${FunctionName}-execution
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: lambda-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Join
+                  - ''
+                  - - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:'
+                    - !Sub '/aws/lambda/${FunctionName}:*'
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ConfigS3Bucket}/config/*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SecretArn
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: python3.12
+      Handler: app.handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      Environment:
+        Variables:
+          CONFIG_BUCKET: !Ref ConfigS3Bucket
+          CONFIG_KEY: !Ref ConfigS3Key
+          SECRET_ARN: !Ref SecretArn
+
+  ConfigObjectCreatedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref ConfigS3Bucket
+          object:
+            key:
+              - prefix: config/
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: LambdaConfigObjectCreated
+
+  EventBridgeLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ConfigObjectCreatedRule.Arn
+
+Outputs:
+  FunctionName:
+    Value: !Ref LambdaFunction
+  FunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  EventRuleArn:
+    Value: !GetAtt ConfigObjectCreatedRule.Arn
+  ConfigEventPattern:
+    Value: !Sub s3://${ConfigS3Bucket}/config/*

@@ -38,7 +38,7 @@ El trust policy comprueba dos claims del token:
 
 - `aud` debe ser `sts.amazonaws.com`.
 - `sub` debe corresponder exactamente al repositorio configurado y a uno de estos tags:
-  `direct-v*`, `api-v*`, `alb-v*` o `url-v*`.
+  `direct-v*`, `api-v*`, `alb-v*`, `url-v*` o `event-v*`.
 
 Un push normal, una pull request o un tag de otro repositorio no puede asumir ese role.
 
@@ -127,7 +127,7 @@ El acceso público del ejemplo facilita la prueba, pero no es una configuración
 - El role de GitHub puede desplegar templates del repositorio cuando el tag está autorizado.
   Protege los tags y limita quién puede publicar releases.
 - Las variables de repositorio pueden cambiarse desde GitHub. Restringe quién administra Actions.
-- El bootstrap mantiene algunos permisos de CloudFormation amplios para soportar los cuatro
+- El bootstrap mantiene algunos permisos de CloudFormation amplios para soportar los cinco
   templates. Revisa y acota `cloudformation:*` y `iam:PassRole` antes de usarlo en producción.
 - SSE-S3 protege el almacenamiento, pero SSE-KMS aporta control de claves, auditoría y separación
   adicional si la organización lo necesita.

@@ -3,7 +3,7 @@
 Repositorio de referencia para construir, probar y desplegar una función AWS Lambda en Python
 separando código, configuración y secretos.
 
-La solución mantiene la misma Lambda en cuatro formas de exposición. Cada forma tiene su propio
+La solución mantiene la misma Lambda en cinco formas de exposición o activación. Cada forma tiene su propio
 CloudFormation template, workflow y guía:
 
 | Tipo | Template | Workflow | Guía |
@@ -12,14 +12,16 @@ CloudFormation template, workflow y guía:
 | API Gateway | [`template-api-gateway.yaml`](infrastructure/template-api-gateway.yaml) | [`deploy-api-gateway.yml`](.github/workflows/deploy-api-gateway.yml) | [`docs/deploy-api-gateway.md`](docs/deploy-api-gateway.md) |
 | Application Load Balancer | [`template-alb.yaml`](infrastructure/template-alb.yaml) | [`deploy-alb.yml`](.github/workflows/deploy-alb.yml) | [`docs/deploy-alb.md`](docs/deploy-alb.md) |
 | Lambda Function URL | [`template-function-url.yaml`](infrastructure/template-function-url.yaml) | [`deploy-function-url.yml`](.github/workflows/deploy-function-url.yml) | [`docs/deploy-function-url.md`](docs/deploy-function-url.md) |
+| S3 + EventBridge | [`template-s3-eventbridge.yaml`](infrastructure/template-s3-eventbridge.yaml) | [`deploy-s3-eventbridge.yml`](.github/workflows/deploy-s3-eventbridge.yml) | [`docs/deploy-s3-eventbridge.md`](docs/deploy-s3-eventbridge.md) |
 
 ## Qué hace la aplicación
 
 La Lambda recibe un evento, lee configuración no sensible desde S3 y consulta un secreto en
 Secrets Manager. Devuelve JSON compatible con invocación directa, API Gateway, ALB y Function
-URL. El valor del secreto no entra en la respuesta, el ZIP ni los logs.
+URL. En el modo S3 + EventBridge, la subida de `config/*` activa la Lambda de forma asíncrona.
+El valor del secreto no entra en la respuesta, el ZIP ni los logs.
 
-La única diferencia entre los cuatro despliegues es el adaptador de entrada. El código de negocio,
+La única diferencia entre los cinco despliegues es el adaptador de entrada. El código de negocio,
 los tests, el bucket de artefactos y el modelo de permisos de ejecución son comunes.
 
 ## Artefactos y S3
@@ -63,18 +65,21 @@ lamda-cicd/
 │   ├── deploy-direct.yml
 │   ├── deploy-api-gateway.yml
 │   ├── deploy-alb.yml
-│   └── deploy-function-url.yml
+│   ├── deploy-function-url.yml
+│   └── deploy-s3-eventbridge.yml
 ├── infrastructure/
 │   ├── bootstrap.yaml
 │   ├── template-direct.yaml
 │   ├── template-api-gateway.yaml
 │   ├── template-alb.yaml
-│   └── template-function-url.yaml
+│   ├── template-function-url.yaml
+│   └── template-s3-eventbridge.yaml
 ├── docs/
 │   ├── deploy-direct.md
 │   ├── deploy-api-gateway.md
 │   ├── deploy-alb.md
-│   └── deploy-function-url.md
+│   ├── deploy-function-url.md
+│   └── deploy-s3-eventbridge.md
 ├── src/app/
 ├── tests/
 ├── config/example.json
@@ -115,7 +120,7 @@ export GITHUB_REPOSITORY_ID=1417192239
 El bootstrap crea el bucket privado versionado, el secreto y el role OIDC de GitHub. No crea
 ningún endpoint de exposición. Cada guía específica indica sus variables, tag y template.
 
-Los workflows usan nombres de función distintos por defecto para que las cuatro variantes
+Los workflows usan nombres de función distintos por defecto para que las cinco variantes
 puedan coexistir. Puedes sobreescribirlos con las variables `FUNCTION_NAME_DIRECT`,
 `FUNCTION_NAME_API_GATEWAY`, `FUNCTION_NAME_ALB` y `FUNCTION_NAME_FUNCTION_URL`.
 
@@ -178,8 +183,8 @@ gh variable set ALB_SECURITY_GROUP_ID --body "sg-aaaaaaaa"
 ```
 
 Después de cambiar el trust policy del bootstrap, vuelve a ejecutar `./scripts/bootstrap.sh`
-antes de usar los tags. El role debe aceptar los cuatro sujetos OIDC exactos:
-`direct-v*`, `api-v*`, `alb-v*` y `url-v*`.
+antes de usar los tags. El role debe aceptar los cinco sujetos OIDC exactos:
+`direct-v*`, `api-v*`, `alb-v*`, `url-v*` y `event-v*`.
 
 ### Lista de URLs para comprobar objetos creados durante bootstrap
 
@@ -243,7 +248,7 @@ bash -n scripts/*.sh
 shellcheck -x -S warning scripts/*.sh
 ```
 
-CI valida los cuatro templates. El empaquetador comprueba que el ZIP no contiene `config/`,
+CI valida los cinco templates. El empaquetador comprueba que el ZIP no contiene `config/`,
 `tests/`, `.env` ni secretos.
 
 ## Seguridad
@@ -265,7 +270,7 @@ La configuración detallada de variables, OIDC, tags y troubleshooting está en
 
 ## Decisiones y límites
 
-Los cuatro templates repiten intencionadamente la base de Lambda para que cada despliegue sea
+Los cinco templates repiten intencionadamente la base de Lambda para que cada despliegue sea
 legible y revisable de forma aislada. No hay parámetros `EnableX` cruzados ni un template que
 cree recursos de otros modos.
 
@@ -276,6 +281,7 @@ direct-v1.2.3
 api-v1.2.3
 alb-v1.2.3
 url-v1.2.3
+event-v1.2.3
 ```
 
-Así no se despliegan cuatro arquitecturas por publicar un único tag.
+Así no se activan varias arquitecturas por publicar un único tag.

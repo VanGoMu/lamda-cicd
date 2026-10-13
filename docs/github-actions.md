@@ -166,6 +166,20 @@ STACK_NAME_FUNCTION_URL
 FUNCTION_NAME_FUNCTION_URL
 ```
 
+### S3 + EventBridge
+
+La infraestructura EventBridge se crea una sola vez con
+`infrastructure/template-s3-eventbridge.yaml`. Las publicaciones posteriores solo suben los
+artefactos al bucket:
+
+```bash
+git tag event-v1.2.3
+git push origin event-v1.2.3
+```
+
+La regla escucha `config/*`, por lo que el workflow sube primero el ZIP y después el JSON. La
+subida del JSON emite el evento que invoca Lambda.
+
 ## 5. Crear variables con GitHub CLI
 
 Desde la raíz del repositorio, con `gh` autenticado:
@@ -200,9 +214,10 @@ direct-v*
 api-v*
 alb-v*
 url-v*
+event-v*
 ```
 
-El trust policy de AWS acepta solo esos cuatro patrones y el repositorio configurado en el
+El trust policy de AWS acepta solo esos cinco patrones y el repositorio configurado en el
 bootstrap. GitHub debe exigir revisión para cambios de workflows y de variables.
 
 ## 7. Qué ocurre al publicar un tag
@@ -243,7 +258,7 @@ el workflow correcto y que la subida incluye `--sse AES256`.
 ### El workflow no aparece
 
 Comprueba que el fichero `deploy-*.yml` está en la rama por defecto y que el tag usa exactamente
-`direct-v`, `api-v`, `alb-v` o `url-v` seguido de una versión SemVer.
+`direct-v`, `api-v`, `alb-v`, `url-v` o `event-v` seguido de una versión SemVer.
 
 ### ALB falla al crear
 
