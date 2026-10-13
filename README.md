@@ -115,6 +115,58 @@ puedan coexistir. Puedes sobreescribirlos con las variables `FUNCTION_NAME_DIREC
 
 No se ejecutan despliegues AWS durante las validaciones locales.
 
+### Lista de URLs para comprobar objetos creados durante bootstrap
+
+Después de ejecutar el bootstrap, define la región y el nombre de la stack. El siguiente
+bloque obtiene los outputs reales sin imprimir el valor del secreto:
+
+```bash
+export AWS_REGION=eu-west-1
+export BOOTSTRAP_STACK_NAME=lambda-cicd-bootstrap
+export SECRET_NAME="${SECRET_NAME:-lambda-cicd/demo}"
+
+export STACK_ID="$(aws cloudformation describe-stacks \
+    --region "$AWS_REGION" \
+    --stack-name "$BOOTSTRAP_STACK_NAME" \
+    --query 'Stacks[0].StackId' \
+    --output text)"
+
+export ARTIFACT_BUCKET="$(aws cloudformation describe-stacks \
+    --region "$AWS_REGION" \
+    --stack-name "$BOOTSTRAP_STACK_NAME" \
+    --query 'Stacks[0].Outputs[?OutputKey==`ArtifactBucketName`].OutputValue' \
+    --output text)"
+export SECRET_ARN="$(aws cloudformation describe-stacks \
+    --region "$AWS_REGION" \
+    --stack-name "$BOOTSTRAP_STACK_NAME" \
+    --query 'Stacks[0].Outputs[?OutputKey==`SecretArn`].OutputValue' \
+    --output text)"
+export GITHUB_ROLE_ARN="$(aws cloudformation describe-stacks \
+    --region "$AWS_REGION" \
+    --stack-name "$BOOTSTRAP_STACK_NAME" \
+    --query 'Stacks[0].Outputs[?OutputKey==`GitHubRoleArn`].OutputValue' \
+    --output text)"
+export AWS_ACCOUNT_ID="$(aws sts get-caller-identity \
+    --query Account --output text)"
+
+export CFN_URL="https://${AWS_REGION}.console.aws.amazon.com/cloudformation/home?region=${AWS_REGION}#/stacks/stackinfo?stackId=${STACK_ID}"
+export S3_URL="https://s3.console.aws.amazon.com/s3/buckets/${ARTIFACT_BUCKET}?region=${AWS_REGION}&tab=objects"
+export S3_CODE_URL="https://s3.console.aws.amazon.com/s3/buckets/${ARTIFACT_BUCKET}?region=${AWS_REGION}&prefix=code%2F&tab=objects"
+export S3_CONFIG_URL="https://s3.console.aws.amazon.com/s3/buckets/${ARTIFACT_BUCKET}?region=${AWS_REGION}&prefix=config%2F&tab=objects"
+export SECRET_URL="https://${AWS_REGION}.console.aws.amazon.com/secretsmanager/secret?name=${SECRET_NAME}&region=${AWS_REGION}"
+export ROLE_URL="https://console.aws.amazon.com/iam/home?region=${AWS_REGION}#/roles/details/${GITHUB_ROLE_ARN##*/}"
+export OIDC_URL="https://console.aws.amazon.com/iam/home?region=${AWS_REGION}#/identity_providers"
+
+echo "CloudFormation: $CFN_URL"
+echo "S3 bucket: $S3_URL"
+echo "S3 objetos de código: $S3_CODE_URL"
+echo "S3 objetos de configuración: $S3_CONFIG_URL"
+echo "Secrets Manager: $SECRET_URL"
+echo "Role GitHub Actions: $ROLE_URL"
+echo "Proveedores OIDC: $OIDC_URL"
+
+```
+
 ## Validación local
 
 ```bash
