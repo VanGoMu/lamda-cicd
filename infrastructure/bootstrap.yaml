@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Recursos iniciales para Lambda CI/CD con GitHub OIDC.
+
+Parameters:
+  GitHubOrganization:
+    Type: String
+  GitHubRepository:
+    Type: String
+  GitHubRoleName:
+    Type: String
+    Default: lambda-cicd-github-actions
+  SecretName:
+    Type: String
+    Default: lambda-cicd/demo
+
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  ApplicationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref SecretName
+      Description: Secret de ejemplo; cambiarlo fuera del repositorio.
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: token
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+
+  GitHubActionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref GitHubRoleName
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !GetAtt GitHubOidcProvider.Arn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub
+                  - repo:${Organization}/${Repository}:ref:refs/tags/v*
+                  - Organization: !Ref GitHubOrganization
+                    Repository: !Ref GitHubRepository
+      Policies:
+        - PolicyName: github-deploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:AbortMultipartUpload
+                Resource: !Sub ${ArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:UpdateStack
+                Resource: '*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: lambda.amazonaws.com
+
+Outputs:
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+  SecretArn:
+    Value: !Ref ApplicationSecret
+  GitHubRoleArn:
+    Value: !GetAtt GitHubActionsRole.Arn

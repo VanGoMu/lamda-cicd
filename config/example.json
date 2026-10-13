@@ -1,0 +1,5 @@
+{
+  "application_name": "lambda-cicd-demo",
+  "environment": "production",
+  "message": "respuesta desde configuración versionada"
+}

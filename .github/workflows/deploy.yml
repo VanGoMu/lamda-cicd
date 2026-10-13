@@ -1,0 +1,69 @@
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
+  STACK_NAME: ${{ vars.STACK_NAME }}
+  SECRET_ARN: ${{ vars.SECRET_ARN }}
+  GITHUB_ROLE_ARN: ${{ vars.GITHUB_ROLE_ARN }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install packaging tools
+        run: python -m pip install -r requirements.txt
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.GITHUB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build code artifact
+        run: ./scripts/package.sh "${{ github.ref_name }}"
+      - name: Upload code artifact
+        run: >-
+          aws s3 cp "build/lambda-${{ steps.version.outputs.version }}.zip"
+          "s3://${ARTIFACT_BUCKET}/code/${{ steps.version.outputs.version }}.zip"
+          --sse AES256
+      - name: Upload configuration artifact
+        run: ./scripts/upload-config.sh "${{ github.ref_name }}"
+      - name: Deploy Lambda stack
+        run: |
+          aws cloudformation deploy \
+            --region "$AWS_REGION" \
+            --stack-name "$STACK_NAME" \
+            --template-file infrastructure/template.yaml \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              CodeS3Bucket="$ARTIFACT_BUCKET" \
+              CodeS3Key="code/${{ steps.version.outputs.version }}.zip" \
+              ConfigS3Bucket="$ARTIFACT_BUCKET" \
+              ConfigS3Key="config/${{ steps.version.outputs.version }}.json" \
+              SecretArn="$SECRET_ARN"
+      - name: Read function name
+        id: stack
+        run: >-
+          echo "function_name=$(aws cloudformation describe-stacks
+          --stack-name "$STACK_NAME"
+          --query 'Stacks[0].Outputs[?OutputKey==`FunctionName`].OutputValue'
+          --output text)" >> "$GITHUB_OUTPUT"
+      - name: Safe smoke test
+        env:
+          FUNCTION_NAME: ${{ steps.stack.outputs.function_name }}
+        run: ./scripts/smoke-test.sh
