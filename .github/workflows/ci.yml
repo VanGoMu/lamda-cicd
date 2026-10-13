@@ -16,20 +16,27 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
+
       - name: Lint
         run: ruff check .
+
       - name: Tests
         run: python -m pytest
+
       - name: Compile Python
         run: python -m compileall src tests
+
       - name: Validate infrastructure
         uses: aws-actions/setup-sam@v2
+
       - name: Validate all deployment templates
         run: |
           for template in infrastructure/template-*.yaml; do
             sam validate --lint --template-file "$template"
           done
+
       - name: Package without secrets or configuration
         run: ./scripts/package.sh 0.0.0
