@@ -26,7 +26,7 @@ Variables obligatorias:
 AWS_REGION
 ARTIFACT_BUCKET
 SECRET_ARN
-GITHUB_ROLE_ARN
+AWS_ROLE_ARN
 ```
 
 Variable opcional:

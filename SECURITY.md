@@ -1,5 +1,8 @@
 # Seguridad
 
+La explicación técnica completa está en [docs/security.md](docs/security.md). Este documento
+mantiene el procedimiento breve para responder ante incidentes.
+
 ## Reportar un secreto expuesto
 
 No abras una issue pública con el valor. Notifica de forma privada al mantenedor y proporciona

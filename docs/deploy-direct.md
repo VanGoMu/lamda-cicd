@@ -20,8 +20,9 @@ code/1.2.3.zip
 config/1.2.3.json
 ```
 
-Por tanto, la respuesta a "solo subir un S3" es: sí, un solo **bucket S3**; no, no un solo
-objeto. La configuración no entra en el ZIP.
+El workflow ejecuta `aws s3 cp` sobre HTTPS y añade `--sse AES256` a la subida del ZIP y de la
+configuración. El bucket exige TLS y cifrado SSE-S3, y el role OIDC solo puede escribir en
+`code/*` y `config/*`.
 
 ## Configuración de GitHub
 
@@ -31,7 +32,7 @@ Variables obligatorias:
 AWS_REGION
 ARTIFACT_BUCKET
 SECRET_ARN
-GITHUB_ROLE_ARN
+AWS_ROLE_ARN
 ```
 
 La stack por defecto se llama `lambda-cicd-direct`. Se puede cambiar con

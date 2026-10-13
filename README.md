@@ -38,6 +38,10 @@ Son dos objetos del mismo bucket, no dos buckets ni un único ZIP con configurac
 El secreto vive exclusivamente en Secrets Manager. No se sube al bucket ni se pasa como variable
 de GitHub Actions.
 
+Los workflows escriben con `aws s3 cp` usando `--sse AES256`. El bucket creado por el bootstrap
+usa versionado, bloqueo de acceso público y una bucket policy que exige HTTPS y rechaza objetos
+sin SSE-S3. El role OIDC solo puede escribir bajo los prefijos `code/*` y `config/*`.
+
 ## Arquitectura común
 
 ```mermaid
@@ -115,6 +119,66 @@ puedan coexistir. Puedes sobreescribirlos con las variables `FUNCTION_NAME_DIREC
 
 No se ejecutan despliegues AWS durante las validaciones locales.
 
+## Configuración de GitHub Actions
+
+Sí, hay que configurar variables en el repositorio de GitHub antes de publicar un tag. El
+workflow no usa access keys: obtiene credenciales mediante OIDC asumiendo el role
+`GitHubRoleArn` creado por el bootstrap.
+
+En GitHub abre **Settings → Secrets and variables → Actions → Variables** y crea estas
+variables de repositorio:
+
+| Variable | Valor | Uso |
+|---|---|---|
+| `AWS_REGION` | `eu-west-1` | Región del despliegue |
+| `ARTIFACT_BUCKET` | output `ArtifactBucketName` | Bucket común de ZIP y configuración |
+| `SECRET_ARN` | output `SecretArn` | ARN del secreto, no su valor |
+| `AWS_ROLE_ARN` | output `GitHubRoleArn` | Role que asume Actions mediante OIDC |
+
+Variables opcionales generales:
+
+| Variable | Default |
+|---|---|
+| `FUNCTION_NAME_DIRECT` | `lambda-cicd-direct` |
+| `FUNCTION_NAME_API_GATEWAY` | `lambda-cicd-api-gateway` |
+| `FUNCTION_NAME_ALB` | `lambda-cicd-alb` |
+| `FUNCTION_NAME_FUNCTION_URL` | `lambda-cicd-function-url` |
+| `STACK_NAME_DIRECT` | `lambda-cicd-direct` |
+| `STACK_NAME_API_GATEWAY` | `lambda-cicd-api-gateway` |
+| `STACK_NAME_ALB` | `lambda-cicd-alb` |
+| `STACK_NAME_FUNCTION_URL` | `lambda-cicd-function-url` |
+
+Variables específicas:
+
+| Workflow | Variables adicionales |
+|---|---|
+| `deploy-api-gateway.yml` | `API_STAGE_NAME` opcional, default `v1` |
+| `deploy-alb.yml` | `ALB_SUBNETS` y `ALB_SECURITY_GROUP_ID`, obligatorias |
+| `deploy-function-url.yml` | `FUNCTION_URL_AUTH_TYPE`, default `AWS_IAM` |
+
+No configures el valor del secreto como variable ni como secret de GitHub. La Lambda lo lee de
+Secrets Manager usando `SECRET_ARN`.
+
+Si tienes GitHub CLI autenticada, puedes crear las variables comunes así:
+
+```bash
+gh variable set AWS_REGION --body "$AWS_REGION"
+gh variable set ARTIFACT_BUCKET --body "$ARTIFACT_BUCKET"
+gh variable set SECRET_ARN --body "$SECRET_ARN"
+gh variable set AWS_ROLE_ARN --body "$AWS_ROLE_ARN"
+```
+
+Para el workflow de ALB añade sus valores reales:
+
+```bash
+gh variable set ALB_SUBNETS --body "subnet-aaaaaaaa,subnet-bbbbbbbb"
+gh variable set ALB_SECURITY_GROUP_ID --body "sg-aaaaaaaa"
+```
+
+Después de cambiar el trust policy del bootstrap, vuelve a ejecutar `./scripts/bootstrap.sh`
+antes de usar los tags. El role debe aceptar los cuatro sujetos OIDC exactos:
+`direct-v*`, `api-v*`, `alb-v*` y `url-v*`.
+
 ### Lista de URLs para comprobar objetos creados durante bootstrap
 
 Después de ejecutar el bootstrap, define la región y el nombre de la stack. El siguiente
@@ -141,7 +205,7 @@ export SECRET_ARN="$(aws cloudformation describe-stacks \
     --stack-name "$BOOTSTRAP_STACK_NAME" \
     --query 'Stacks[0].Outputs[?OutputKey==`SecretArn`].OutputValue' \
     --output text)"
-export GITHUB_ROLE_ARN="$(aws cloudformation describe-stacks \
+export AWS_ROLE_ARN="$(aws cloudformation describe-stacks \
     --region "$AWS_REGION" \
     --stack-name "$BOOTSTRAP_STACK_NAME" \
     --query 'Stacks[0].Outputs[?OutputKey==`GitHubRoleArn`].OutputValue' \
@@ -154,7 +218,7 @@ export S3_URL="https://s3.console.aws.amazon.com/s3/buckets/${ARTIFACT_BUCKET}?r
 export S3_CODE_URL="https://s3.console.aws.amazon.com/s3/buckets/${ARTIFACT_BUCKET}?region=${AWS_REGION}&prefix=code%2F&tab=objects"
 export S3_CONFIG_URL="https://s3.console.aws.amazon.com/s3/buckets/${ARTIFACT_BUCKET}?region=${AWS_REGION}&prefix=config%2F&tab=objects"
 export SECRET_URL="https://${AWS_REGION}.console.aws.amazon.com/secretsmanager/secret?name=${SECRET_NAME}&region=${AWS_REGION}"
-export ROLE_URL="https://console.aws.amazon.com/iam/home?region=${AWS_REGION}#/roles/details/${GITHUB_ROLE_ARN##*/}"
+export ROLE_URL="https://console.aws.amazon.com/iam/home?region=${AWS_REGION}#/roles/details/${AWS_ROLE_ARN##*/}"
 export OIDC_URL="https://console.aws.amazon.com/iam/home?region=${AWS_REGION}#/identity_providers"
 
 echo "CloudFormation: $CFN_URL"
@@ -182,9 +246,10 @@ CI valida los cuatro templates. El empaquetador comprueba que el ZIP no contiene
 
 ## Seguridad
 
-Consulta [SECURITY.md](SECURITY.md) para incidentes, rotación del secreto y revocación del role
-OIDC. Antes de publicar una exposición HTTP revisa especialmente la autenticación del modo
-seleccionado:
+Consulta [docs/security.md](docs/security.md) para la arquitectura de seguridad, permisos,
+protecciones de S3 y riesgos residuales. Consulta [SECURITY.md](SECURITY.md) para incidentes,
+rotación del secreto y revocación del role OIDC. Antes de publicar una exposición HTTP revisa
+especialmente la autenticación del modo seleccionado:
 
 - API Gateway y ALB son públicos en sus templates de ejemplo.
 - Function URL usa `AWS_IAM` por defecto; `NONE` es público.
@@ -192,6 +257,9 @@ seleccionado:
 
 La infraestructura de red del ALB no se crea automáticamente: sus subnets y Security Group se
 proporcionan explícitamente en su workflow.
+
+La configuración detallada de variables, OIDC, tags y troubleshooting está en
+[docs/github-actions.md](docs/github-actions.md).
 
 ## Decisiones y límites
 

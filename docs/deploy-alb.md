@@ -35,7 +35,7 @@ Variables obligatorias:
 AWS_REGION
 ARTIFACT_BUCKET
 SECRET_ARN
-GITHUB_ROLE_ARN
+AWS_ROLE_ARN
 ALB_SUBNETS=subnet-aaa,subnet-bbb
 ALB_SECURITY_GROUP_ID=sg-aaa
 ```

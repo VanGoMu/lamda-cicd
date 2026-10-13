@@ -35,6 +35,32 @@ Resources:
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
 
+  ArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt ArtifactBucket.Arn
+              - !Sub ${ArtifactBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: DenyUnencryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: s3:PutObject
+            Resource: !Sub ${ArtifactBucket.Arn}/*
+            Condition:
+              StringNotEquals:
+                s3:x-amz-server-side-encryption: AES256
+
   ApplicationSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -70,10 +96,23 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub
-                  - repo:${Organization}/${Repository}:ref:refs/tags/v*
-                  - Organization: !Ref GitHubOrganization
-                    Repository: !Ref GitHubRepository
+                token.actions.githubusercontent.com:sub:
+                  - !Sub
+                    - repo:${Organization}/${Repository}:ref:refs/tags/direct-v*
+                    - Organization: !Ref GitHubOrganization
+                      Repository: !Ref GitHubRepository
+                  - !Sub
+                    - repo:${Organization}/${Repository}:ref:refs/tags/api-v*
+                    - Organization: !Ref GitHubOrganization
+                      Repository: !Ref GitHubRepository
+                  - !Sub
+                    - repo:${Organization}/${Repository}:ref:refs/tags/alb-v*
+                    - Organization: !Ref GitHubOrganization
+                      Repository: !Ref GitHubRepository
+                  - !Sub
+                    - repo:${Organization}/${Repository}:ref:refs/tags/url-v*
+                    - Organization: !Ref GitHubOrganization
+                      Repository: !Ref GitHubRepository
       Policies:
         - PolicyName: github-deploy
           PolicyDocument:
@@ -83,7 +122,9 @@ Resources:
                 Action:
                   - s3:PutObject
                   - s3:AbortMultipartUpload
-                Resource: !Sub ${ArtifactBucket.Arn}/*
+                Resource:
+                  - !Sub ${ArtifactBucket.Arn}/code/*
+                  - !Sub ${ArtifactBucket.Arn}/config/*
               - Effect: Allow
                 Action:
                   - cloudformation:CreateChangeSet

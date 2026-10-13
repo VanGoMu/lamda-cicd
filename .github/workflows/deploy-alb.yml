@@ -15,7 +15,7 @@ env:
   STACK_NAME: ${{ vars.STACK_NAME_ALB || 'lambda-cicd-alb' }}
   FUNCTION_NAME: ${{ vars.FUNCTION_NAME_ALB || 'lambda-cicd-alb' }}
   SECRET_ARN: ${{ vars.SECRET_ARN }}
-  GITHUB_ROLE_ARN: ${{ vars.GITHUB_ROLE_ARN }}
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
   ALB_SUBNETS: ${{ vars.ALB_SUBNETS }}
   ALB_SECURITY_GROUP_ID: ${{ vars.ALB_SECURITY_GROUP_ID }}
 
@@ -32,7 +32,7 @@ jobs:
       - name: Configure AWS credentials with OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.GITHUB_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Extract and validate version
         id: version
