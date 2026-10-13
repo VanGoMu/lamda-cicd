@@ -4,9 +4,24 @@ set -euo pipefail
 : "${AWS_REGION:?Define AWS_REGION}"
 FUNCTION_NAME="${FUNCTION_NAME:?Define FUNCTION_NAME}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p "$ROOT_DIR/build"
+
+if [[ -n "${API_URL:-}" ]]; then
+  command -v curl >/dev/null || {
+    printf 'curl es obligatorio para API_URL\n' >&2
+    exit 1
+  }
+  response="$(curl --fail-with-body --silent --show-error \
+    --header 'Content-Type: application/json' \
+    --data '{"requestContext":{"requestId":"smoke-test"}}' \
+    "$API_URL")"
+  jq -e '.ok == true' <<<"$response" >/dev/null
+  printf 'Smoke test API Gateway correcto para %s\n' "$API_URL"
+  exit 0
+fi
+
 PAYLOAD="$ROOT_DIR/build/smoke-payload.json"
 RESPONSE="$ROOT_DIR/build/smoke-response.json"
-mkdir -p "$ROOT_DIR/build"
 printf '%s\n' '{"requestContext":{"requestId":"smoke-test"}}' > "$PAYLOAD"
 
 aws lambda invoke \

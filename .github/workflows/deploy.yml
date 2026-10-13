@@ -15,6 +15,8 @@ env:
   STACK_NAME: ${{ vars.STACK_NAME }}
   SECRET_ARN: ${{ vars.SECRET_ARN }}
   GITHUB_ROLE_ARN: ${{ vars.GITHUB_ROLE_ARN }}
+  ENABLE_API_GATEWAY: ${{ vars.ENABLE_API_GATEWAY || 'false' }}
+  API_STAGE_NAME: ${{ vars.API_STAGE_NAME || 'v1' }}
 
 jobs:
   deploy:
@@ -55,15 +57,25 @@ jobs:
               CodeS3Key="code/${{ steps.version.outputs.version }}.zip" \
               ConfigS3Bucket="$ARTIFACT_BUCKET" \
               ConfigS3Key="config/${{ steps.version.outputs.version }}.json" \
-              SecretArn="$SECRET_ARN"
+              SecretArn="$SECRET_ARN" \
+              EnableApiGateway="$ENABLE_API_GATEWAY" \
+              ApiStageName="$API_STAGE_NAME"
       - name: Read function name
         id: stack
-        run: >-
-          echo "function_name=$(aws cloudformation describe-stacks
-          --stack-name "$STACK_NAME"
-          --query 'Stacks[0].Outputs[?OutputKey==`FunctionName`].OutputValue'
-          --output text)" >> "$GITHUB_OUTPUT"
+        run: |
+          function_name="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`FunctionName`].OutputValue' \
+            --output text)"
+          api_url="$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
+            --output text)"
+          [[ "$api_url" == "None" ]] && api_url=""
+          echo "function_name=$function_name" >> "$GITHUB_OUTPUT"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
       - name: Safe smoke test
         env:
           FUNCTION_NAME: ${{ steps.stack.outputs.function_name }}
+          API_URL: ${{ steps.stack.outputs.api_url }}
         run: ./scripts/smoke-test.sh

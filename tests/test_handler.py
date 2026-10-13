@@ -53,3 +53,19 @@ def test_handler_hides_secret_error(monkeypatch):
 
     assert response["statusCode"] == 500
     assert json.loads(response["body"]) == {"ok": False, "error": "secret_error"}
+
+
+def test_handler_accepts_api_gateway_event(monkeypatch):
+    monkeypatch.setenv("CONFIG_BUCKET", "bucket")
+    monkeypatch.setenv("CONFIG_KEY", "config/v1.json")
+    monkeypatch.setenv("SECRET_ARN", "arn:test")
+
+    response = lambda_handler(
+        {"requestContext": {"requestId": "api-request"}, "httpMethod": "GET"},
+        None,
+        s3_client=S3Client(),
+        secrets_client=SecretsClient(),
+    )
+
+    assert response["statusCode"] == 200
+    assert json.loads(response["body"])["request_id"] == "api-request"

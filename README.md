@@ -13,9 +13,20 @@ identificadores y documentación usan `lambda` correctamente.
 
 ## Arquitectura
 
-La Lambda recibe un evento directo o compatible con API Gateway, carga el JSON de
+La Lambda recibe un evento directo o HTTP compatible con API Gateway, carga el JSON de
 configuración desde S3 y obtiene de Secrets Manager solo los campos necesarios para construir
 una respuesta segura. El valor secreto nunca forma parte de la respuesta ni de los logs.
+
+Hay dos modos de ejecución, seleccionables en cada despliegue:
+
+- **Directo, sin API Gateway**: `EnableApiGateway=false`. Se usa `aws lambda invoke`, es el
+  modo por defecto y no añade un endpoint público.
+- **HTTP con API Gateway**: `EnableApiGateway=true`. Crea una API REST regional con una ruta
+  `ANY /` sobre la raíz, autorización `NONE` para este ejemplo y permiso
+  restringido a invocar esta función. La URL queda en el output `ApiGatewayUrl`.
+
+Ambos modos llaman a la misma función, el mismo ZIP y la misma lógica de negocio; solo cambia
+el adaptador de entrada.
 
 ```mermaid
 flowchart LR
@@ -24,6 +35,8 @@ flowchart LR
     Lambda -->|secretsmanager:GetSecretValue\nsolo ARN autorizado| Secret[(Secrets Manager\nsecreto)]
     Lambda --> Logs[CloudWatch Logs\nlogs sin secreto]
     Lambda --> Response[Respuesta JSON\nHTTP compatible]
+    Direct[aws lambda invoke\nmodo directo] --> Lambda
+    Api[API Gateway REST\nmodo HTTP opcional] --> Lambda
 ```
 
 ### Flujo CI/CD
@@ -186,6 +199,47 @@ sam validate --lint --template-file infrastructure/template.yaml
 El paquete se inspecciona antes de publicarlo. No debe contener `config/`, `.env`, secretos,
 tests, caches ni artefactos de desarrollo.
 
+## Elegir el modo de invocación
+
+El modo se decide con el parámetro `EnableApiGateway` de CloudFormation. Para desplegar sin
+API Gateway:
+
+```bash
+aws cloudformation deploy \
+  --stack-name "$STACK_NAME" \
+  --template-file infrastructure/template.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    CodeS3Bucket="$ARTIFACT_BUCKET" \
+    CodeS3Key="code/1.2.3.zip" \
+    ConfigS3Bucket="$ARTIFACT_BUCKET" \
+    ConfigS3Key="config/1.2.3.json" \
+    SecretArn="$SECRET_ARN" \
+    EnableApiGateway=false
+```
+
+Para desplegar con API Gateway, usa los mismos parámetros y cambia el modo:
+
+```bash
+aws cloudformation deploy \
+  --stack-name "$STACK_NAME" \
+  --template-file infrastructure/template.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    CodeS3Bucket="$ARTIFACT_BUCKET" \
+    CodeS3Key="code/1.2.3.zip" \
+    ConfigS3Bucket="$ARTIFACT_BUCKET" \
+    ConfigS3Key="config/1.2.3.json" \
+    SecretArn="$SECRET_ARN" \
+    EnableApiGateway=true \
+    ApiStageName=v1
+```
+
+El workflow de deploy toma `ENABLE_API_GATEWAY` desde una variable del repositorio de GitHub;
+si no existe, usa `false`. Después del despliegue lee `ApiGatewayUrl` y el smoke test usa
+automáticamente HTTP cuando ese output existe. Para el modo directo usa el output
+`FunctionName`.
+
 ## Workflows
 
 ### CI: `ci.yml`
@@ -217,11 +271,27 @@ git push origin v1.2.3
 
 ## Prueba segura
 
-Para probar la Lambda, usa un evento sintético sin credenciales ni valores secretos:
+Para probar la Lambda directamente, usa un evento sintético sin credenciales ni valores
+secretos:
 
 ```bash
-./scripts/smoke-test.sh --function-name "$LAMBDA_FUNCTION_NAME"
+AWS_REGION="$AWS_REGION" \
+FUNCTION_NAME="$LAMBDA_FUNCTION_NAME" \
+./scripts/smoke-test.sh
 ```
+
+Para probar el modo HTTP, exporta la URL del output de CloudFormation. El script no necesita
+credenciales de aplicación porque la API de este ejemplo es pública:
+
+```bash
+AWS_REGION="$AWS_REGION" \
+FUNCTION_NAME="$LAMBDA_FUNCTION_NAME" \
+API_URL="$API_GATEWAY_URL" \
+./scripts/smoke-test.sh
+```
+
+La respuesta HTTP es el mismo JSON que devuelve la invocación directa. Si se necesita
+autenticación real, sustituye `AuthorizationType: NONE` por un authorizer antes de publicar.
 
 La respuesta puede incluir el nombre de la aplicación, el entorno y un estado derivado, pero
 nunca el valor del secreto. Los logs deben permitir distinguir errores de configuración,
