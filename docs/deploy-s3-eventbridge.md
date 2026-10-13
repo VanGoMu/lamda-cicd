@@ -26,14 +26,47 @@ ya están en S3.
 
 ## Inicialización única
 
-La stack event-driven debe crearse una vez con el template específico. El ZIP inicial debe
-existir antes de crear la función:
+La stack event-driven debe crearse una vez con el template específico. Antes de publicar
+cualquier artefacto, carga las variables que usa el comando. `ARTIFACT_BUCKET` no es el nombre
+de una carpeta ni se deduce de `VERSION`: es el output `ArtifactBucketName` que creó el
+bootstrap. `SECRET_ARN` es el output `SecretArn` y se pasa a CloudFormation sin leer el valor
+del secreto.
+
+Si todavía no existe la infraestructura común, ejecuta primero el bootstrap como se explica en
+[`github-actions.md`](github-actions.md). Después, en la misma terminal:
+
+```bash
+export AWS_REGION=eu-west-1
+export BOOTSTRAP_STACK_NAME=lambda-cicd-bootstrap
+
+export ARTIFACT_BUCKET="$(aws cloudformation describe-stacks \
+  --region "$AWS_REGION" \
+  --stack-name "$BOOTSTRAP_STACK_NAME" \
+  --query 'Stacks[0].Outputs[?OutputKey==`ArtifactBucketName`].OutputValue' \
+  --output text)"
+export SECRET_ARN="$(aws cloudformation describe-stacks \
+  --region "$AWS_REGION" \
+  --stack-name "$BOOTSTRAP_STACK_NAME" \
+  --query 'Stacks[0].Outputs[?OutputKey==`SecretArn`].OutputValue' \
+  --output text)"
+
+: "${ARTIFACT_BUCKET:?La stack no devolvio ArtifactBucketName}"
+: "${SECRET_ARN:?La stack no devolvio SecretArn}"
+aws s3api head-bucket --bucket "$ARTIFACT_BUCKET" --region "$AWS_REGION"
+printf 'Bucket de artefactos: %s\n' "$ARTIFACT_BUCKET"
+printf 'Secret ARN: %s\n' "$SECRET_ARN"
+```
+
+El ZIP inicial debe existir antes de crear la función. Publícalo en `code/` y sube después la
+configuración a `config/`; ese orden permite que el segundo `Object Created` sea el que dispare
+la regla de EventBridge:
 
 ```bash
 VERSION=1.0.0
 ./scripts/package.sh "$VERSION"
 aws s3 cp "build/lambda-${VERSION}.zip" \
-  "s3://${ARTIFACT_BUCKET}/code/${VERSION}.zip" --sse AES256
+  "s3://${ARTIFACT_BUCKET}/code/${VERSION}.zip" \
+  --region "$AWS_REGION" --sse AES256
 ./scripts/upload-config.sh "$VERSION"
 
 aws cloudformation deploy \
@@ -51,6 +84,12 @@ aws cloudformation deploy \
 
 La subida de `config/1.0.0.json` puede producir un primer evento antes de que la regla exista;
 la Lambda se puede invocar después con una nueva versión de configuración para verificarla.
+
+Si ves `upload failed ... s3:///code/...` o `Invalid bucket name ""`, `ARTIFACT_BUCKET` está
+vacío. No repitas el `aws s3 cp`: vuelve a ejecutar el bloque de recuperación de outputs y
+comprueba que `printf` muestra un nombre de bucket. El mensaje
+`upload-config.sh: ARTIFACT_BUCKET: Define ARTIFACT_BUCKET` es la misma causa detectada por el
+script antes de llamar a AWS.
 
 ## Configuración de GitHub
 

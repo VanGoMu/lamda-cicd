@@ -112,10 +112,12 @@ Ejecuta una vez el bootstrap después de revisar sus parámetros:
 export AWS_REGION=eu-west-1
 export GITHUB_OWNER=tu-organizacion
 export GITHUB_REPOSITORY=tu-organizacion/lamda-cicd
-export GITHUB_ORGANIZATION_ID=203402347
-export GITHUB_REPOSITORY_ID=1417192239
 ./scripts/bootstrap.sh
 ```
+
+Si no defines los IDs numéricos, `bootstrap.sh` los detecta mediante un `GET` a la API REST de
+GitHub. Necesitas `curl` y `jq`; para un repositorio privado, define `GITHUB_TOKEN`. También
+puedes definir uno o ambos IDs manualmente.
 
 El bootstrap crea el bucket privado versionado, el secreto y el role OIDC de GitHub. No crea
 ningún endpoint de exposición. Cada guía específica indica sus variables, tag y template.
