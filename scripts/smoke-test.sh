@@ -16,8 +16,12 @@ if [[ -n "${API_URL:-}" ]]; then
     --data '{"requestContext":{"requestId":"smoke-test"}}' \
     "$API_URL")"
   jq -e '.ok == true' <<<"$response" >/dev/null
-  printf 'Smoke test API Gateway correcto para %s\n' "$API_URL"
+  printf 'Smoke test HTTP correcto para %s\n' "$API_URL"
   exit 0
+fi
+
+if [[ "${FUNCTION_URL_AUTH_TYPE:-}" == "AWS_IAM" ]]; then
+  printf 'Function URL usa AWS_IAM; se valida mediante invocación directa\n'
 fi
 
 PAYLOAD="$ROOT_DIR/build/smoke-payload.json"

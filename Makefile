@@ -11,7 +11,9 @@ test:
 
 validate:
 	python -m compileall src tests
-	sam validate --lint --template-file infrastructure/template.yaml
+	for template in infrastructure/template-*.yaml; do \
+		sam validate --lint --template-file "$$template"; \
+	done
 
 package:
 	./scripts/package.sh "$${VERSION:-local}"

@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda versionada con configuracion S3 y secreto en Secrets Manager.
+Description: Despliegue directo de Lambda sin endpoint HTTP.
 
 Parameters:
   CodeS3Bucket:
@@ -15,18 +15,6 @@ Parameters:
   FunctionName:
     Type: String
     Default: lambda-cicd-demo
-  EnableApiGateway:
-    Type: String
-    AllowedValues:
-      - 'true'
-      - 'false'
-    Default: 'false'
-  ApiStageName:
-    Type: String
-    Default: v1
-
-Conditions:
-  ApiGatewayEnabled: !Equals [!Ref EnableApiGateway, 'true']
 
 Resources:
   LambdaExecutionRole:
@@ -79,51 +67,6 @@ Resources:
           CONFIG_KEY: !Ref ConfigS3Key
           SECRET_ARN: !Ref SecretArn
 
-  ApiGateway:
-    Type: AWS::ApiGateway::RestApi
-    Condition: ApiGatewayEnabled
-    Properties:
-      Name: !Sub ${FunctionName}-api
-      EndpointConfiguration:
-        Types:
-          - REGIONAL
-
-  ApiGatewayRootMethod:
-    Type: AWS::ApiGateway::Method
-    Condition: ApiGatewayEnabled
-    Properties:
-      RestApiId: !Ref ApiGateway
-      ResourceId: !GetAtt ApiGateway.RootResourceId
-      HttpMethod: ANY
-      AuthorizationType: NONE
-      Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub
-          - arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/
-            functions/${FunctionArn}/invocations
-          - FunctionArn: !GetAtt LambdaFunction.Arn
-
-  ApiGatewayDeployment:
-    Type: AWS::ApiGateway::Deployment
-    Condition: ApiGatewayEnabled
-    DependsOn:
-      - ApiGatewayRootMethod
-    Properties:
-      RestApiId: !Ref ApiGateway
-      StageName: !Ref ApiStageName
-
-  ApiGatewayLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Condition: ApiGatewayEnabled
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref LambdaFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub
-        - arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*
-        - ApiId: !Ref ApiGateway
-
 Outputs:
   FunctionName:
     Value: !Ref LambdaFunction
@@ -133,6 +76,3 @@ Outputs:
     Value: !Sub s3://${ConfigS3Bucket}/${ConfigS3Key}
   DirectInvoke:
     Value: !Sub aws lambda invoke --function-name ${FunctionName} --payload '{"requestContext":{}}'
-  ApiGatewayUrl:
-    Condition: ApiGatewayEnabled
-    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${ApiStageName}

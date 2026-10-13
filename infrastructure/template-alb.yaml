@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Despliegue de Lambda expuesto mediante Application Load Balancer.
+
+Parameters:
+  CodeS3Bucket:
+    Type: String
+  CodeS3Key:
+    Type: String
+  ConfigS3Bucket:
+    Type: String
+  ConfigS3Key:
+    Type: String
+  SecretArn:
+    Type: String
+  FunctionName:
+    Type: String
+    Default: lambda-cicd-demo
+  AlbSubnets:
+    Type: String
+    Description: Dos subnets de Availability Zones distintas, separadas por comas.
+  AlbSecurityGroupId:
+    Type: String
+    Description: Security Group existente para el ALB.
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${FunctionName}-execution
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: lambda-runtime
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Join
+                  - ''
+                  - - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:'
+                    - !Sub '/aws/lambda/${FunctionName}:*'
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${ConfigS3Bucket}/${ConfigS3Key}
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref SecretArn
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref FunctionName
+      Runtime: python3.12
+      Handler: app.handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref CodeS3Bucket
+        S3Key: !Ref CodeS3Key
+      Environment:
+        Variables:
+          CONFIG_BUCKET: !Ref ConfigS3Bucket
+          CONFIG_KEY: !Ref ConfigS3Key
+          SECRET_ARN: !Ref SecretArn
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${FunctionName}-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets: !Split [',', !Ref AlbSubnets]
+      SecurityGroups:
+        - !Ref AlbSecurityGroupId
+
+  AlbTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${FunctionName}-tg
+      TargetType: lambda
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
+
+  AlbListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AlbTargetGroup
+
+  AlbLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaFunction
+      Principal: elasticloadbalancing.amazonaws.com
+      SourceArn: !Ref AlbTargetGroup
+
+Outputs:
+  FunctionName:
+    Value: !Ref LambdaFunction
+  FunctionArn:
+    Value: !GetAtt LambdaFunction.Arn
+  ConfigLocation:
+    Value: !Sub s3://${ConfigS3Bucket}/${ConfigS3Key}
+  AlbUrl:
+    Value: !Sub http://${Alb.DNSName}

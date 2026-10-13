@@ -26,6 +26,10 @@ jobs:
         run: python -m compileall src tests
       - name: Validate infrastructure
         uses: aws-actions/setup-sam@v2
-      - run: sam validate --lint --template-file infrastructure/template.yaml
+      - name: Validate all deployment templates
+        run: |
+          for template in infrastructure/template-*.yaml; do
+            sam validate --lint --template-file "$template"
+          done
       - name: Package without secrets or configuration
         run: ./scripts/package.sh 0.0.0

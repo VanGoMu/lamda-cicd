@@ -1,9 +1,9 @@
-name: Deploy
+name: Deploy Lambda with API Gateway
 
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'api-v*'
 
 permissions:
   contents: read
@@ -12,10 +12,10 @@ permissions:
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   ARTIFACT_BUCKET: ${{ vars.ARTIFACT_BUCKET }}
-  STACK_NAME: ${{ vars.STACK_NAME }}
+  STACK_NAME: ${{ vars.STACK_NAME_API_GATEWAY || 'lambda-cicd-api-gateway' }}
+  FUNCTION_NAME: ${{ vars.FUNCTION_NAME_API_GATEWAY || 'lambda-cicd-api-gateway' }}
   SECRET_ARN: ${{ vars.SECRET_ARN }}
   GITHUB_ROLE_ARN: ${{ vars.GITHUB_ROLE_ARN }}
-  ENABLE_API_GATEWAY: ${{ vars.ENABLE_API_GATEWAY || 'false' }}
   API_STAGE_NAME: ${{ vars.API_STAGE_NAME || 'v1' }}
 
 jobs:
@@ -33,49 +33,51 @@ jobs:
         with:
           role-to-assume: ${{ env.GITHUB_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: Extract version
+      - name: Extract and validate version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-      - name: Build code artifact
-        run: ./scripts/package.sh "${{ github.ref_name }}"
-      - name: Upload code artifact
-        run: >-
-          aws s3 cp "build/lambda-${{ steps.version.outputs.version }}.zip"
-          "s3://${ARTIFACT_BUCKET}/code/${{ steps.version.outputs.version }}.zip"
-          --sse AES256
-      - name: Upload configuration artifact
-        run: ./scripts/upload-config.sh "${{ github.ref_name }}"
-      - name: Deploy Lambda stack
         run: |
+          version="${GITHUB_REF_NAME#api-v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build code artifact
+        run: ./scripts/package.sh "${{ steps.version.outputs.version }}"
+      - name: Upload code and configuration
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          aws s3 cp "build/lambda-${version}.zip" \
+            "s3://${ARTIFACT_BUCKET}/code/${version}.zip" --sse AES256
+          ./scripts/upload-config.sh "$version"
+      - name: Deploy Lambda and API Gateway
+        run: |
+          version="${{ steps.version.outputs.version }}"
           aws cloudformation deploy \
             --region "$AWS_REGION" \
             --stack-name "$STACK_NAME" \
-            --template-file infrastructure/template.yaml \
+            --template-file infrastructure/template-api-gateway.yaml \
             --capabilities CAPABILITY_NAMED_IAM \
             --parameter-overrides \
               CodeS3Bucket="$ARTIFACT_BUCKET" \
-              CodeS3Key="code/${{ steps.version.outputs.version }}.zip" \
+              CodeS3Key="code/${version}.zip" \
               ConfigS3Bucket="$ARTIFACT_BUCKET" \
-              ConfigS3Key="config/${{ steps.version.outputs.version }}.json" \
+              ConfigS3Key="config/${version}.json" \
               SecretArn="$SECRET_ARN" \
-              EnableApiGateway="$ENABLE_API_GATEWAY" \
+              FunctionName="$FUNCTION_NAME" \
               ApiStageName="$API_STAGE_NAME"
-      - name: Read function name
+      - name: Read outputs
         id: stack
         run: |
           function_name="$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --query 'Stacks[0].Outputs[?OutputKey==`FunctionName`].OutputValue' \
             --output text)"
-          api_url="$(aws cloudformation describe-stacks \
+          endpoint="$(aws cloudformation describe-stacks \
             --stack-name "$STACK_NAME" \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' \
             --output text)"
-          [[ "$api_url" == "None" ]] && api_url=""
           echo "function_name=$function_name" >> "$GITHUB_OUTPUT"
-          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
-      - name: Safe smoke test
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+      - name: Safe HTTP smoke test
         env:
           FUNCTION_NAME: ${{ steps.stack.outputs.function_name }}
-          API_URL: ${{ steps.stack.outputs.api_url }}
+          API_URL: ${{ steps.stack.outputs.endpoint }}
         run: ./scripts/smoke-test.sh
